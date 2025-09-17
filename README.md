@@ -1,7 +1,6 @@
-# Catalogue VOD Downloader pour Unraid + Infuse
+# Catalogue VOD Downloader
 
-Cet outil permet de télécharger localement des films et des séries depuis un serveur Xtream Codes et de les lire via Infuse sur Apple TV.
-
+Cet outil permet de télécharger localement des films et des séries depuis un serveur Xtream Codes.
 ## Fonctionnalités
 
 - Liste des films VOD depuis l'API Xtream Codes
