@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ serial.info.name }}</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; background-color: #f4f4f4; }
+        .container { max-width: 900px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        h1 { color: #333; text-align: center; }
+        h2 { color: #555; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-top: 20px; }
+        .season-container { display: flex; flex-wrap: wrap; gap: 15px; margin-top: 15px; }
+        .season-box { border: 1px solid #ddd; border-radius: 5px; padding: 10px; width: 120px; text-align: center; background-color: #f9f9f9; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        .season-box a { text-decoration: none; color: #007bff; font-weight: bold; display: block; }
+        .season-box a:hover { text-decoration: underline; }
+        ul { list-style: none; padding: 0; }
+        li { background: #e9e9e9; margin-bottom: 5px; padding: 8px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; }
+        .episode-title { flex-grow: 1; }
+        .download-buttons { display: flex; gap: 5px; }
+        .download-btn, .nfo-btn {
+            background-color: #28a745;
+            color: white;
+            border: none;
+            padding: 6px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85em;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .nfo-btn { background-color: #007bff; }
+        .download-btn:hover, .nfo-btn:hover { opacity: 0.9; }
+        .back-link { display: block; text-align: center; margin-top: 20px; }
+        #download-queue-widget button {
+            border: none;
+            background-color: #dc3545; 
+            color: white;
+            padding: 3px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-left: 10px;
+            font-size: 0.8em;
+        }
+
+        #download-queue-widget button:hover {
+            background-color: #c82333;
+        }
+
+        #queue-list li {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 5px 0;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        #queue-list li:last-child {
+            border-bottom: none;
+        }
+
+        #toggle-queue-btn { 
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background-color: #28a745; 
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            font-size: 1.5em;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            z-index: 999;
+        }
+
+        #toggle-queue-btn:hover {
+            background-color: #218838;
+        }
+    </style>
+    <script>
+        function downloadEpisode(episodeId, seriesId, season, episodeNum, title) {
+            fetch('{{ url_for("seriale.download_episode") }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: new URLSearchParams({
+                    'id': episodeId,
+                    'series_id': seriesId,
+                    'season': season,
+                    'episode_num': episodeNum,
+                    'title': title
+                })
+            })
+            .then(response => {
+                if (response.ok) {
+                    alert('Épisode ajouté à la file d\'attente !');
+                } else {
+                    alert('Erreur lors de l\'ajout de l\'épisode à la file d\'attente.');
+                }
+            })
+            .catch(error => {
+                console.error('Erreur :', error);
+                alert('Une erreur réseau est survenue.');
+            });
+        }
+
+        function downloadSeason(seriesId, season) {
+            if (confirm('Êtes-vous sûr de vouloir télécharger toute la saison ' + season + ' ?')) {
+                fetch('{{ url_for("seriale.download_season") }}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: new URLSearchParams({
+                        'series_id': seriesId,
+                        'season': season
+                    })
+                })
+                .then(response => {
+                    if (response.ok) {
+                        alert('Saison ajoutée à la file d\'attente !');
+                    } else {
+                        alert('Erreur lors de l\'ajout de la saison à la file d\'attente.');
+                    }
+                })
+                .catch(error => {
+                    console.error('Erreur :', error);
+                    alert('Une erreur réseau est survenue.');
+                });
+            }
+        }
+
+        function downloadNFO(seriesId, season, episodeNum) {
+        const url = `/seriale/nfo/${seriesId}/${season}/${episodeNum}`;
+        
+        fetch(url)
+        .then(response => {
+            if (!response.ok) {
+                return response.text().then(text => { throw new Error(text) });
+            }
+            return response.text();
+        })
+        .then(data => {
+            alert(data); 
+        })
+        .catch(error => {
+            console.error('Erreur NFO :', error);
+            alert('Une erreur est survenue lors du téléchargement du fichier NFO : ' + error.message);
+        });
+        }
+
+        window.addEventListener('DOMContentLoaded', function() {
+        const queueWidget = document.getElementById('download-queue-widget');
+        const queueHeader = document.getElementById('queue-header');
+        const toggleQueueWidgetBtn = document.getElementById('toggle-queue-widget');
+        const toggleQueueBtn = document.getElementById('toggle-queue-btn');
+        const queueList = document.getElementById('queue-list');
+
+        let isDragging = false;
+        let offsetX, offsetY;
+
+        async function updateQueueWidget() {
+            try {
+                const response = await fetch('{{ url_for("seriale.queue_status") }}');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                const statusData = await response.json();
+                
+                const fullQueueResponse = await fetch('{{ url_for("seriale.get_full_queue") }}');
+                if (!fullQueueResponse.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                const fullQueueData = await fullQueueResponse.json();
+
+                queueList.innerHTML = ''; 
+                if (fullQueueData.length === 0) {
+                    queueList.innerHTML = '<p style="text-align: center; margin: 10px 0;">La file d\'attente est vide.</p>';
+                } else {
+                    fullQueueData.forEach(job => {
+                        const listItem = document.createElement('li');
+                        const statusChar = statusData[job.episode_id] || '❓'; 
+                        listItem.innerHTML = `
+                            <span>${statusChar} ${job.file}</span>
+                            <button data-episode-id="${job.item_id}">Supprimer</button>
+                        `;
+                        queueList.appendChild(listItem);
+                    });
+                }
+            } catch (error) {
+                console.error('Erreur lors de la mise à jour de la file d\'attente :', error);
+                queueList.innerHTML = '<p style="color: red; text-align: center;">Impossible de charger la file d\'attente.</p>';
+            }
+        }
+
+        async function removeFromQueue(episodeId) {
+            try {
+                const response = await fetch('{{ url_for("seriale.queue_remove") }}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: new URLSearchParams({ id: episodeId })
+                });
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                await updateQueueWidget();
+                alert('Élément supprimé de la file d\'attente.');
+            } catch (error) {
+                console.error('Erreur lors de la suppression de la file d\'attente :', error);
+                alert('Une erreur est survenue lors de la suppression de l\'élément de la file d\'attente : ' + error.message);
+            }
+        }
+
+        queueList.addEventListener('click', (event) => {
+            if (event.target.tagName === 'BUTTON' && event.target.hasAttribute('data-episode-id')) {
+                const episodeId = event.target.getAttribute('data-episode-id');
+                removeFromQueue(episodeId);
+            }
+        });
+
+        toggleQueueWidgetBtn.addEventListener('click', () => {
+            queueWidget.style.display = 'none';
+            toggleQueueBtn.style.display = 'flex';
+        });
+
+        toggleQueueBtn.addEventListener('click', () => {
+            queueWidget.style.display = 'flex';
+            toggleQueueBtn.style.display = 'none';
+            updateQueueWidget();
+        });
+
+        queueHeader.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            offsetX = e.clientX - queueWidget.getBoundingClientRect().left;
+            offsetY = e.clientY - queueWidget.getBoundingClientRect().top;
+            queueWidget.style.cursor = 'grabbing';
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            queueWidget.style.left = (e.clientX - offsetX) + 'px';
+            queueWidget.style.top = (e.clientY - offsetY) + 'px';
+        });
+
+        document.addEventListener('mouseup', () => {
+            isDragging = false;
+            queueWidget.style.cursor = 'grab';
+        });
+
+        setInterval(updateQueueWidget, 5000);
+        
+        queueWidget.style.display = 'none';
+        toggleQueueBtn.style.display = 'flex';
+
+         function updateFavoriteButton(button, isFavorite) {
+            if (isFavorite) {
+                button.style.color = 'gold';
+                button.textContent = '★';
+            } else {
+                button.style.color = 'gray';
+                button.textContent = '☆';
+            }
+        }
+
+        document.querySelectorAll('.favorite-toggle-btn').forEach(button => {
+            const seriesId = button.dataset.seriesId;
+
+            fetch(`/seriale/favorites/status/${seriesId}`)
+                .then(response => response.json())
+                .then(data => {
+                    updateFavoriteButton(button, data.is_favorite);
+                })
+                .catch(error => console.error('Erreur lors de la récupération du statut des favoris :', error));
+
+            button.addEventListener('click', function() {
+                fetch(`/seriale/favorites/toggle/${seriesId}`, { method: 'POST' })
+                    .then(response => response.json())
+                    .then(data => {
+                        updateFavoriteButton(button, data.is_favorite);
+                        alert(data.message);
+                    })
+                    .catch(error => console.error('Erreur lors du changement de favoris :', error));
+            });
+        });
+        queueWidget.style.display = 'none';
+        toggleQueueBtn.style.display = 'flex';
+        });
+    
+    </script>
+</head>
+<body>
+    <div class="container">
+        <h1>{{ serial.info.name }}<button class="favorite-toggle-btn"
+            data-series-id="{{ series_id }}"
+            id="fav-btn-{{ series_id }}"
+            style="background: none; border: none; cursor: pointer; font-size: 1.5em; color: gray;">
+        ☆ </button>
+    
+</button></h1>
+        {% if serial.info.cover %}
+            <p><img src="{{ serial.info.cover }}" alt="{{ serial.info.name }} cover" style="max-width: 200px; display: block; margin: 0 auto;"></p>
+        {% endif %}
+        <p><strong>Année :</strong> {{ serial.info.releaseDate }}</p>
+        <p><strong>Genres :</strong> {{ serial.info.genres }}</p>
+        <p><strong>Description :</strong> {{ serial.info.plot }}</p>
+
+        <h2>Saisons :</h2>
+        <div class="season-container">
+            {% for numer_sezonu, episodes in sezony.items() %}
+                <div class="season-box">
+                    <a href="#season-{{ numer_sezonu }}">Saison {{ numer_sezonu }}</a>
+                    <button onclick="downloadSeason('{{ series_id }}', {{ numer_sezonu }})" class="download-btn">Télécharger la saison</button>
+                </div>
+            {% endfor %}
+        </div>
+
+        {% for numer_sezonu, episodes in sezony.items() %}
+            <h2 id="season-{{ numer_sezonu }}">Saison {{ numer_sezonu }}</h2>
+            <ul>
+                {% for episode in episodes %}
+                    <li>
+                        <span class="episode-title">S{{ "%02d"|format(episode.season) }}E{{ "%02d"|format(episode.episode_num) }} - {{ episode.title }} {% if episode.id | string in completed_data %} ✅ {% endif %}</span>
+                        <div class="download-buttons">
+                            <button class="download-btn"
+                                onclick="downloadEpisode('{{ episode.id }}', '{{ series_id }}', '{{ episode.season }}', '{{ episode.episode_num }}', '{{ episode.title }}')">
+                                Télécharger
+                            </button>
+                            <button class="nfo-btn"
+                                onclick="downloadNFO('{{ series_id }}', {{ episode.season }}, {{ episode.episode_num }})">
+                                NFO
+                            </button>
+                        </div>
+                    </li>
+                {% endfor %}
+            </ul>
+        {% endfor %}
+        <p class="back-link"><a href="{{ url_for('seriale.seriale_list') }}">← Retour à la liste des séries</a></p>
+        <p style="text-align: center;"><a href="{{ url_for('seriale.queue_status') }}">Statut de la file d'attente</a></p>
+        <p style="text-align: center;"><a href="{{ url_for('seriale.completed_episodes') }}">Épisodes téléchargés</a></p>
+    </div>
+    <div id="download-queue-widget" style="
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    width: 300px;
+    max-height: 400px;
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    z-index: 1000;
+    display: none; 
+    flex-direction: column;
+    overflow: hidden;
+">
+    <div style="
+        background-color: #007bff;
+        color: white;
+        padding: 10px 15px;
+        border-top-left-radius: 8px;
+        border-top-right-radius: 8px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        cursor: move; 
+    " id="queue-header">
+        <span>File d'attente de téléchargement</span>
+        <button id="toggle-queue-widget" style="
+            background: none;
+            border: none;
+            color: white;
+            font-size: 1.2em;
+            cursor: pointer;
+            padding: 0 5px;
+        ">✕</button>
+    </div>
+    <div id="queue-content" style="
+        flex-grow: 1;
+        overflow-y: auto;
+        padding: 10px;
+        font-size: 0.9em;
+        color: #343a40;
+    ">
+        <p style="text-align: center; margin: 10px 0;"></p>
+        <ul id="queue-list" style="list-style: none; padding: 0; margin: 0;">
+            </ul>
+    </div>
+</div>
+<button id="toggle-queue-btn">↓</button>
+</body>
+</html>

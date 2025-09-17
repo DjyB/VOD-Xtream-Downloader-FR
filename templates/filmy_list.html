@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Liste des films</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; background-color: #f4f4f4; }
+        .container { max-width: 900px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        h1 { color: #333; text-align: center; }
+        .search-form { text-align: center; margin-bottom: 20px; }
+        .search-form input[type="text"] {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            width: 60%;
+            max-width: 400px;
+            margin-right: 10px;
+        }
+        .search-form button {
+            padding: 8px 15px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .search-form button:hover {
+            background-color: #0056b3;
+        }
+        .movies-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .movie-item {
+            background-color: #f9f9f9;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            overflow: hidden;
+            text-align: center;
+            padding-bottom: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .movie-item img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #eee;
+        }
+        .movie-item h2 {
+            font-size: 1.1em;
+            margin: 0;
+            padding: 5px 0;
+            flex-grow: 1; /* Permet d'étirer le titre */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 0 5px;
+        }
+        .movie-item h2 a {
+            text-decoration: none;
+            color: #333; /* Couleur changée en plus foncée pour une meilleure lisibilité */
+            font-weight: bold;
+            display: block;
+            width: 100%;
+        }
+        .movie-item h2 a:hover {
+            text-decoration: underline;
+        }
+        .download-btn, .nfo-btn {
+            background-color: #28a745;
+            color: white;
+            border: none;
+            padding: 6px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85em;
+            text-decoration: none;
+            display: inline-block;
+            margin-top: 5px; /* Marge ajoutée */
+        }
+        .nfo-btn { background-color: #007bff; }
+        .download-btn:hover, .nfo-btn:hover { opacity: 0.9; }
+
+        /* Styles pour l'icône de téléchargement */
+        .downloaded-icon {
+            color: green;
+            margin-left: 5px;
+            font-size: 1.2em;
+            vertical-align: middle;
+        }
+
+        /* Styles for the queue widget (same as in serial_detail.html) */
+        #download-queue-widget {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 300px;
+            max-height: 400px;
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 1000;
+            display: flex; /* Changed to flex */
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        #download-queue-widget button {
+            border: none;
+            background-color: #dc3545; /* Red for remove button */
+            color: white;
+            padding: 3px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-left: 10px;
+            font-size: 0.8em;
+        }
+
+        #download-queue-widget button:hover {
+            background-color: #c82333;
+        }
+
+        #queue-list li {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 5px 0;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        #queue-list li:last-child {
+            border-bottom: none;
+        }
+
+        #toggle-queue-btn { /* Floating button to show/hide widget */
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background-color: #28a745;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            font-size: 1.5em;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            z-index: 999;
+        }
+
+        #toggle-queue-btn:hover {
+            background-color: #218838;
+        }
+    </style>
+    <script>
+        function downloadMovie(id, name, ext) {
+            fetch('{{ url_for("filmy.download_movie") }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: new URLSearchParams({
+                    'id': id,
+                    'name': name,
+                    'ext': ext 
+                })
+            })
+            .then(response => response.text()) // Get text response to read potential messages
+            .then(message => {
+                alert(message); // Display message from backend
+                updateQueueWidget(); // Refresh queue status
+            })
+            .catch(error => {
+                console.error('Erreur :', error);
+                alert('Une erreur réseau s'est produite lors du téléchargement du film.');
+            });
+        }
+
+        function downloadMovieNFO(movieId) {
+            const url = `/filmy/nfo/${movieId}`;
+            fetch(url)
+            .then(response => {
+                if (!response.ok) {
+                    return response.text().then(text => { throw new Error(text) });
+                }
+                return response.text();
+            })
+            .then(data => {
+                alert(data);
+            })
+            .catch(error => {
+                console.error('Erreur NFO:', error);
+                alert('Une erreur s'est produite lors du téléchargement du fichier NFO: ' + error.message);
+            });
+        }
+
+
+        // Fonctions du widget de file d'attente - copiées depuis serial_detail.html
+        window.addEventListener('DOMContentLoaded', function() {
+            const queueWidget = document.getElementById('download-queue-widget');
+            const queueHeader = document.getElementById('queue-header');
+            const toggleQueueWidgetBtn = document.getElementById('toggle-queue-widget'); // Bouton X
+            const toggleQueueBtn = document.getElementById('toggle-queue-btn'); // Bouton flottant ↓
+            const queueList = document.getElementById('queue-list');
+
+            let isDragging = false;
+            let offsetX, offsetY;
+
+            // Fonction pour télécharger et mettre à jour la file d'attente
+            window.updateQueueWidget = async function() { // Rendre global
+                try {
+                    const statusResponse = await fetch('{{ url_for("filmy.queue_status") }}'); // Changé en blueprint de films
+                    if (!statusResponse.ok) {
+                        throw new Error(`HTTP error! Status: ${statusResponse.status}`);
+                    }
+                    const statusData = await statusResponse.json();
+                    
+                    const fullQueueResponse = await fetch('{{ url_for("filmy.get_full_queue") }}'); // Changé en blueprint de films
+                    if (!fullQueueResponse.ok) {
+                        throw new Error(`HTTP error! Status: ${fullQueueResponse.status}`);
+                    }
+                    const fullQueueData = await fullQueueResponse.json();
+
+                    queueList.innerHTML = ''; // Vider la liste
+                    if (fullQueueData.length === 0) {
+                        queueList.innerHTML = '<p style="text-align: center; margin: 10px 0;">La file d'attente est vide.</p>';
+                    } else {
+                        fullQueueData.forEach(job => {
+                            const listItem = document.createElement('li');
+                            // Utiliser job.item_id
+                            const statusChar = statusData[job.item_id] || '❓';
+                            listItem.innerHTML = `
+                                <span>${statusChar} ${job.file}</span>
+                                <button data-item-id="${job.item_id}">Supprimer</button>
+                            `;
+                            queueList.appendChild(listItem);
+                        });
+                    }
+                } catch (error) {
+                    console.error('Erreur lors de la mise à jour de la file d'attente:', error);
+                    queueList.innerHTML = '<p style="color: red; text-align: center;">Impossible de charger la file d'attente.</p>';
+                }
+            }
+
+            // Fonction pour supprimer un élément de la file d'attente
+            async function removeFromQueue(itemId) { // Changé en itemId
+                try {
+                    const response = await fetch('{{ url_for("filmy.queue_remove") }}', { // Changé en blueprint de films
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded',
+                        },
+                        body: new URLSearchParams({ id: itemId }) // Changé en id
+                    });
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! Status: ${response.status}`);
+                    }
+                    await updateQueueWidget();
+                    alert('Élément supprimé de la file d'attente.');
+                } catch (error) {
+                    console.error('Erreur lors de la suppression de la file d'attente:', error);
+                    alert('Une erreur s'est produite lors de la suppression de l'élément de la file d'attente: ' + error.message);
+                }
+            }
+
+            // Délégation d'événements pour les boutons "Supprimer"
+            queueList.addEventListener('click', (event) => {
+                if (event.target.tagName === 'BUTTON' && event.target.hasAttribute('data-item-id')) {
+                    const itemId = event.target.getAttribute('data-item-id'); // Changé en itemId
+                    removeFromQueue(itemId);
+                }
+            });
+
+            // Bouton "X" pour masquer le widget
+            toggleQueueWidgetBtn.addEventListener('click', () => {
+                queueWidget.style.display = 'none';
+                toggleQueueBtn.style.display = 'flex';
+            });
+
+            // Bouton flottant pour afficher le widget
+            toggleQueueBtn.addEventListener('click', () => {
+                queueWidget.style.display = 'flex';
+                toggleQueueBtn.style.display = 'none';
+                updateQueueWidget();
+            });
+
+            // Fonctions pour faire glisser le widget
+            queueHeader.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                offsetX = e.clientX - queueWidget.getBoundingClientRect().left;
+                offsetY = e.clientY - queueWidget.getBoundingClientRect().top;
+                queueWidget.style.cursor = 'grabbing';
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+                queueWidget.style.left = (e.clientX - offsetX) + 'px';
+                queueWidget.style.top = (e.clientY - offsetY) + 'px';
+            });
+
+            document.addEventListener('mouseup', () => {
+                isDragging = false;
+                queueWidget.style.cursor = 'grab';
+            });
+
+            // Définir l'intervalle de rafraîchissement de la file d'attente (par exemple, toutes les 5 secondes)
+            setInterval(updateQueueWidget, 5000);
+            
+            // Assurez-vous que le widget est initialement masqué et que le bouton est visible
+            queueWidget.style.display = 'none';
+            toggleQueueBtn.style.display = 'flex';
+        });
+    </script>
+</head>
+<body>
+    <div class="container">
+        <h1>Films disponibles</h1>
+
+        <nav style="text-align: center; margin-bottom: 20px;">
+            <a href="{{ url_for('seriale.seriale_list') }}" style="margin-right: 20px; font-weight: bold; text-decoration: none; color: #007bff;">Séries</a>
+            <a href="{{ url_for('filmy.filmy_list') }}" style="font-weight: bold; text-decoration: underline; color: #007bff;">Films</a>
+        </nav>
+
+        <form class="search-form" action="{{ url_for('filmy.filmy_list') }}" method="get">
+            <input type="text" name="query" placeholder="Rechercher un film..." value="{{ request.args.get('query', '') }}">
+            <button type="submit">Rechercher</button>
+        </form>
+
+        <div class="movies-grid">
+            {% for movie in movies %}
+            <div class="movie-item">
+                {% if movie.stream_icon %}
+                    <img src="{{ movie.stream_icon }}" alt="{{ movie.name }} cover">
+                {% endif %}
+                <h2>
+                    <a href="#">{{ movie.name }}</a>
+                    {% if movie.stream_id | string in completed_data %}
+                        <span class="downloaded-icon">✅</span>
+                    {% endif %}
+                </h2>
+                <button class="download-btn"
+                    onclick="downloadMovie('{{ movie.stream_id }}', '{{ movie.name }}', '{{ movie.container_extension }}')">
+                    Télécharger
+                </button>
+                <button class="nfo-btn"
+                    onclick="downloadMovieNFO('{{ movie.stream_id }}')">
+                    NFO
+                </button>
+            </div>
+            {% endfor %}
+            {% if not movies %}
+            <p style="grid-column: 1 / -1; text-align: center;">Aucun film ne correspond aux critères de recherche.</p>
+            {% endif %}
+        </div>
+        <p style="text-align: center; margin-top: 20px;"><a href="{{ url_for('filmy.completed_movies') }}">Films (et séries) téléchargés</a></p>
+    </div>
+
+    <div id="download-queue-widget" style="
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        width: 300px;
+        max-height: 400px;
+        background-color: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        z-index: 1000;
+        display: none;
+        flex-direction: column;
+        overflow: hidden;
+    ">
+        <div style="
+            background-color: #007bff;
+            color: white;
+            padding: 10px 15px;
+            border-top-left-radius: 8px;
+            border-top-right-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: move;
+        " id="queue-header">
+            <span>File d'attente de téléchargement</span>
+            <button id="toggle-queue-widget" style="
+                background: none;
+                border: none;
+                color: white;
+                font-size: 1.2em;
+                cursor: pointer;
+                padding: 0 5px;
+            ">✕</button>
+        </div>
+        <div id="queue-content" style="
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 10px;
+            font-size: 0.9em;
+            color: #343a40;
+        ">
+            <p style="text-align: center; margin: 10px 0;"></p>
+            <ul id="queue-list" style="list-style: none; padding: 0; margin: 0;">
+            </ul>
+        </div>
+    </div>
+    <button id="toggle-queue-btn">↓</button>
+</body>
+</html>
